@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>合約自動化生成系統 (圖片終極修復版)</title>
+    
+    <!-- 1. 引入基礎函式庫 -->
+    <script src="https://unpkg.com/pizzip@3.1.4/dist/pizzip.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.37.11/docxtemplater.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/1.3.8/FileSaver.min.js"></script>
+    
+    <!-- 2. ★ 關鍵修正：圖片模組載入墊片 (Shim) -->
+    <script>
+        // 模擬 Node.js 的 module 環境，讓圖片模組能正確掛載
+        window.global = window; 
+        var module = { exports: {} };
+    </script>
+    
+    <!-- 3. 載入圖片模組 (使用 unpkg) -->
+    <script src="https://unpkg.com/docxtemplater-image-module-free@1.1.1/build/docxtemplater-image-module-free.js"></script>
+    
+    <!-- 4. 將載入的模組指派給全域變數 -->
+    <script>
+        if (module.exports) {
+            window.ImageModule = module.exports;
+        } else {
+            console.error("圖片模組載入失敗：module.exports 為空");
+        }
+    </script>
+
+    <style>
+        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f4f4f4; padding: 20px; }
+        .container { max-width: 950px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h2 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+        h3 { color: #0056b3; margin-top: 25px; }
+        .page { display: none; }
+        .page.active { display: block; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        
+        input[type="text"], input[type="number"], select, textarea, input[type="file"] { 
+            width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; 
+        }
+        
+        select.inline-select { width: auto; padding: 4px; margin: 0 5px; font-size: 16px; border: 1px solid #999; background-color: #fff; }
+
+        .row { display: flex; gap: 10px; }
+        .col { flex: 1; }
+        .btn-group { margin-top: 20px; text-align: right; }
+        
+        button { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        button.secondary { background-color: #6c757d; }
+        button.success { background-color: #28a745; }
+        button.success:hover { background-color: #218838; }
+        
+        .table-input { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 0.95em; }
+        .table-input th, .table-input td { border: 1px solid #ddd; padding: 8px; text-align: center; vertical-align: middle; }
+        .table-input th { background-color: #f8f9fa; color: #333; }
+        .table-input input { text-align: center; }
+        
+        .read-only { background-color: #e9ecef; cursor: not-allowed; color: #495057; font-weight: bold; }
+        .checkbox-group label { display: inline-block; margin-right: 15px; font-weight: normal; cursor: pointer; align-items: center; }
+        .indent { margin-left: 20px; margin-top: 5px; border-left: 3px solid #eee; padding-left: 10px; }
+        .hidden { display: none; }
+        .required-mark { color: red; margin-left: 3px; }
+        .info-box { background-color: #e2e3e5; padding: 15px; border-radius: 5px; margin-bottom: 20px; color: #383d41; border: 1px solid #d6d8db; }
+        
+        /* 預覽圖片區域 */
+        #imgPreview { max-width: 100%; height: auto; margin-top: 10px; max-height: 200px; border: 1px dashed #ccc; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>合約自動化生成程式</h1>
+    
+    <!-- 第一頁 -->
+    <div id="page1" class="page active">
+        <h2>步驟 1/3：合約類型選擇</h2>
+        <div class="form-group">
+            <label>請選擇合約類型：</label>
+            <div class="checkbox-group">
+                <label><input type="radio" name="contractType" value="new" checked> 新簽約</label>
+                <label><input type="radio" name="contractType" value="renew"> 續約</label>
+            </div>
+        </div>
+        <div class="btn-group">
+            <button onclick="nextPage(2)">下一步 &gt;</button>
+        </div>
+    </div>
+
+    <!-- 第二頁 -->
+    <div id="page2" class="page">
+        <h2>步驟 2/3：基本資料與費用</h2>
+        
+        <!-- 2-1 合約期間 -->
+        <h3>2-1. 合約期間</h3>
+        <div class="row">
+            <div class="col">
+                <label>起始日期 (民國)</label>
+                <div class="row">
+                    <select id="startYear" onchange="calcDuration()"><option value="">年</option></select>
+                    <select id="startMonth" onchange="calcDuration()"><option value="">月</option></select>
+                    <select id="startDay" onchange="calcDuration()"><option value="">日</option></select>
+                </div>
+            </div>
+            <div class="col">
+                <label>結束日期 (民國)</label>
+                <div class="row">
+                    <select id="endYear" onchange="calcDuration()"><option value="">年</option></select>
+                    <select id="endMonth" onchange="calcDuration()"><option value="">月</option></select>
+                    <select id="endDay" onchange="calcDuration()"><option value="">日</option></select>
+                </div>
+            </div>
+        </div>
+        <div class="form-group" style="margin-top: 10px;">
+            <label>期間計算結果：</label>
+            <input type="text" id="durationResult" class="read-only" readonly>
+        </div>
+        <div class="form-group">
+            <label>封底日期 (民國) <span style="font-weight:normal; color:blue; font-size:0.9em;">(預設為今日)</span></label>
+            <div class="row" style="max-width: 400px;">
+                <select id="coverYear"><option value="">年</option></select>
+                <select id="coverMonth"><option value="">月</option></select>
+                <select id="coverDay"><option value="">日</option></select>
+            </div>
+        </div>
+
+        <!-- 2-1 基本資料 -->
+        <h3>基本資料</h3>
+        <div class="row">
+            <div class="col"><label>2-1-1 社區(大樓)名稱 <span class="required-mark">*</span></label><input type="text" id="commName" required></div>
+            <div class="col"><label>2-1-2 社區(大樓)地址 <span class="required-mark">*</span></label><input type="text" id="commAddr" required></div>
+        </div>
+        <div class="row">
+            <div class="col"><label>2-1-3 乙方 <span class="required-mark">*</span></label><input type="text" id="partyB" required></div>
+            <div class="col"><label>2-1-4 代表人 <span class="required-mark">*</span></label><input type="text" id="repName" required></div>
+        </div>
+        <div class="row">
+            <div class="col"><label>2-1-5 電話 <span class="required-mark">*</span></label><input type="text" id="phone" required></div>
+            <div class="col"><label>2-1-6 統一編號</label><input type="text" id="taxId"></div>
+        </div>
+
+        <!-- 2-2 & 2-3 設備與費用 -->
+        <h3>2-2 & 2-3. 設備與費用明細</h3>
+        <table class="table-input">
+            <thead>
+                <tr>
+                    <th width="20%">項目</th>
+                    <th width="10%">數量(台)</th>
+                    <th width="25%">安裝位置</th>
+                    <th width="20%">單價(台/月)</th>
+                    <th width="25%">小計(月)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- 序1 -->
+                <tr>
+                    <td>社區EIP聯網機 (序1)</td>
+                    <td><input type="number" id="qty_eip_net_1" value="0" min="0" onchange="calcFees()"></td>
+                    <td><input type="text" id="loc_eip_net_1" value="大廳/梯廳"></td>
+                    <td><input type="number" id="price_eip_net_1" value="0" onchange="calcFees()"></td>
+                    <td><input type="text" id="sub_eip_net_1" class="read-only" readonly></td>
+                </tr>
+                <!-- 序2 -->
+                <tr>
+                    <td>社區EIP聯網機 (序2)</td>
+                    <td><input type="number" id="qty_eip_net_2" value="0" min="0" onchange="calcFees()"></td>
+                    <td><input type="text" id="loc_eip_net_2" value="大廳/梯廳"></td>
+                    <td><input type="number" id="price_eip_net_2" value="0" onchange="calcFees()"></td>
+                    <td><input type="text" id="sub_eip_net_2" class="read-only" readonly></td>
+                </tr>
+                <!-- 序3 -->
+                <tr>
+                    <td>社區EIP公告機 (序3)</td>
+                    <td><input type="number" id="qty_eip_anno" value="0" min="0" onchange="calcFees()"></td>
+                    <td><input type="text" id="loc_eip_anno" value="電梯車廂內"></td>
+                    <td><input type="number" id="price_eip_anno" value="0" onchange="calcFees()"></td>
+                    <td><input type="text" id="sub_eip_anno" class="read-only" readonly></td>
+                </tr>
+                <!-- 合計 -->
+                <tr>
+                    <td colspan="4" style="text-align: right; font-weight: bold;">合計 (月)</td>
+                    <td><input type="text" id="total_monthly" class="read-only" readonly style="font-weight: bold; color: #d9534f;"></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- 2-4 帳戶資訊 -->
+        <h3>2-4. 匯款帳戶 <span style="font-size:0.8em; color:red;">(此區皆為必填)</span></h3>
+        <div class="row">
+            <div class="col">
+                <label>銀行 <span class="required-mark">*</span></label>
+                <input type="text" id="bankName" placeholder="例如：台灣銀行" required>
+            </div>
+            <div class="col">
+                <label>分行 <span class="required-mark">*</span></label>
+                <input type="text" id="bankBranch" placeholder="例如：信義分行" required>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col">
+                <label>戶名 <span class="required-mark">*</span></label>
+                <input type="text" id="acctName" required>
+            </div>
+            <div class="col">
+                <label>帳號 <span class="required-mark">*</span></label>
+                <input type="text" id="acctNum" required>
+            </div>
+        </div>
+
+        <!-- 存摺影本上傳 -->
+        <div class="info-box" style="margin-top:15px; background-color: #e8f4fc; border-color: #b6d4fe;">
+            <label>存摺影本上傳 (將置入合約附件)</label>
+            <input type="file" id="uploadPassbook" accept="image/jpeg, image/png">
+            <small style="color: #666;">支援 JPG/PNG 格式，系統將自動調整大小以符合頁面。</small>
+            <img id="imgPreview" src="" alt="圖片預覽">
+        </div>
+
+        <div class="btn-group">
+            <button class="secondary" onclick="prevPage(1)">&lt; 上一步</button>
+            <button onclick="nextPage(3)">下一步 &gt;</button>
+        </div>
+    </div>
+
+    <!-- 第三頁 -->
+    <div id="page3" class="page">
+        <h2>步驟 3/3：條款勾選與生成</h2>
+
+        <!-- 3-1 -->
+        <div class="form-group">
+            <label>3-1. 【單選】第二條第二項：合作期間屆滿之處理方式</label>
+            <div class="checkbox-group">
+                <label>
+                    <input type="radio" name="expiryOpt" value="1" checked> 
+                    自動延展
+                    <select id="renewalYear" class="inline-select" onclick="event.stopPropagation()">
+                        <option value="壹" selected>壹</option>
+                        <option value="貳">貳</option>
+                        <option value="參">參</option>
+                        <option value="肆">肆</option>
+                        <option value="伍">伍</option>
+                    </select>
+                    年 (若未通知)
+                </label><br>
+                <label style="margin-top:8px;">
+                    <input type="radio" name="expiryOpt" value="2"> 須重新簽訂書面合約 (否則終止)
+                </label>
+            </div>
+        </div>
+
+        <!-- 3-2 -->
+        <div class="form-group">
+            <label>3-2. 【複選】第三條：意思表示通知方式</label>
+            <div><label><input type="checkbox" id="notify_line"> Line@ 帳號</label></div>
+            <div><label><input type="checkbox" id="notify_paper"> 書面通知</label></div>
+            <div><label><input type="checkbox" id="notify_screen"> 標的設備屏幕刊播</label></div>
+            <div>
+                <label><input type="checkbox" id="notify_email" onchange="toggleEmailInput()"> E-MAIL</label>
+                <div id="emailInputArea" class="indent hidden">
+                    <div class="row">
+                        <div class="col"><small>甲方姓名</small><input type="text" id="mail_name_a"></div>
+                        <div class="col"><small>甲方Email</small><input type="text" id="mail_addr_a"></div>
+                    </div>
+                    <div class="row">
+                        <div class="col"><small>乙方姓名</small><input type="text" id="mail_name_b"></div>
+                        <div class="col"><small>乙方Email</small><input type="text" id="mail_addr_b"></div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <label><input type="checkbox" id="notify_other" onchange="toggleOtherInput()"> 其他社交通訊軟體</label>
+                <div id="otherInputArea" class="indent hidden">
+                    <input type="text" id="other_social_text" placeholder="請輸入軟體名稱">
+                </div>
+            </div>
+        </div>
+
+        <!-- 3-3 -->
+        <div class="form-group">
+            <label>3-3. 【單選】第五條：特別約定事項</label>
+            <div class="checkbox-group">
+                <label><input type="radio" name="specialOpt" value="1" checked onchange="toggleSpecialInput()"> 無</label><br>
+                <label><input type="radio" name="specialOpt" value="2" onchange="toggleSpecialInput()"> 特別約定事項如下</label>
+            </div>
+            <div id="specialInputArea" class="indent hidden">
+                <textarea id="special_terms_text" rows="4" placeholder="請輸入特別約定事項內容..."></textarea>
+            </div>
+        </div>
+
+        <!-- 生成區域 -->
+        <hr>
+        <div class="info-box">
+            <strong>系統提示：</strong> 
+            1. 請確保 Word 範本附件處已填入 <code>{%passbook_image}</code> 標籤。<br>
+            2. 若有上傳圖片，生成過程可能會多花幾秒鐘，請耐心等候。
+        </div>
+
+        <div class="btn-group">
+            <button class="secondary" onclick="prevPage(2)">&lt; 上一步</button>
+            <button class="success" onclick="generateContract()">立即生成合約 Word 檔</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* --- 全域變數：儲存上傳的圖片二進位資料 --- */
+    let passbookImageBuffer = null;
+
+    /* --- 初始化 --- */
+    window.onload = function() {
+        initDateSelects();
+        setDefaultCoverDate();
+        setupImageUpload();
+    };
+
+    // 設定圖片上傳監聽
+    function setupImageUpload() {
+        const fileInput = document.getElementById('uploadPassbook');
+        const preview = document.getElementById('imgPreview');
+
+        fileInput.addEventListener('change', function(e) {
+            if(e.target.files.length === 0) {
+                passbookImageBuffer = null;
+                preview.style.display = 'none';
+                return;
+            }
+            
+            const file = e.target.files[0];
+            
+            // 1. 讀取為 ArrayBuffer 供 docxtemplater 使用
+            const readerArray = new FileReader();
+            readerArray.onload = function(evt) {
+                passbookImageBuffer = evt.target.result;
+            };
+            readerArray.readAsArrayBuffer(file);
+
+            // 2. 讀取為 DataURL 供預覽使用
+            const readerData = new FileReader();
+            readerData.onload = function(evt) {
+                preview.src = evt.target.result;
+                preview.style.display = 'block';
+            };
+            readerData.readAsDataURL(file);
+        });
+    }
+
+    // 產生下拉選單
+    function initDateSelects() {
+        const yearSelects = ['startYear', 'endYear', 'coverYear'];
+        const monthSelects = ['startMonth', 'endMonth', 'coverMonth'];
+        const daySelects = ['startDay', 'endDay', 'coverDay'];
+        yearSelects.forEach(id => {
+            const sel = document.getElementById(id);
+            for(let i=113; i<=130; i++) {
+                const opt = document.createElement('option'); opt.value = i; opt.text = i; sel.add(opt);
+            }
+        });
+        monthSelects.forEach(id => {
+            const sel = document.getElementById(id);
+            for(let i=1; i<=12; i++) {
+                const opt = document.createElement('option');
+                const val = i < 10 ? '0' + i : '' + i;
+                opt.value = val; opt.text = val; sel.add(opt);
+            }
+        });
+        daySelects.forEach(id => {
+            const sel = document.getElementById(id);
+            for(let i=1; i<=31; i++) {
+                const opt = document.createElement('option');
+                const val = i < 10 ? '0' + i : '' + i;
+                opt.value = val; opt.text = val; sel.add(opt);
+            }
+        });
+    }
+
+    function setDefaultCoverDate() {
+        const today = new Date();
+        const rocYear = today.getFullYear() - 1911;
+        const month = (today.getMonth() + 1).toString().padStart(2, '0');
+        const day = today.getDate().toString().padStart(2, '0');
+        const ySel = document.getElementById('coverYear');
+        const mSel = document.getElementById('coverMonth');
+        const dSel = document.getElementById('coverDay');
+        let hasYear = false;
+        for(let i=0; i<ySel.options.length; i++) {
+            if(ySel.options[i].value == rocYear) { ySel.selectedIndex = i; hasYear = true; break; }
+        }
+        if(hasYear) { mSel.value = month; dSel.value = day; }
+    }
+
+    /* --- 核心功能函式 --- */
+
+    function loadFile(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.responseType = 'arraybuffer';
+        xhr.onload = function(e) {
+            if (this.status === 200) { callback(null, this.response); } 
+            else { callback(new Error("Load failed: " + this.status)); }
+        };
+        xhr.onerror = function() { callback(new Error("Network error")); };
+        xhr.send();
+    }
+
+    function nextPage(page) {
+        if(page === 3) {
+            const reqFields = ['commName', 'commAddr', 'partyB', 'repName', 'phone', 'bankName', 'bankBranch', 'acctName', 'acctNum'];
+            let valid = true;
+            let firstError = null;
+            reqFields.forEach(function(id) {
+                const el = document.getElementById(id);
+                if(!el.value.trim()) {
+                    el.style.border = "2px solid red"; el.style.backgroundColor = "#fff0f0"; valid = false;
+                    if(!firstError) firstError = el;
+                } else { el.style.border = "1px solid #ccc"; el.style.backgroundColor = "#fff"; }
+            });
+            if(!valid) {
+                alert("請填寫所有必填欄位！(標示 * 紅色框處)");
+                if(firstError) firstError.scrollIntoView({behavior: "smooth", block: "center"});
+                return;
+            }
+        }
+        const pages = document.querySelectorAll('.page');
+        for(let i=0; i<pages.length; i++) pages[i].classList.remove('active');
+        document.getElementById('page' + page).classList.add('active');
+        window.scrollTo(0, 0);
+    }
+    
+    function prevPage(page) {
+        const pages = document.querySelectorAll('.page');
+        for(let i=0; i<pages.length; i++) pages[i].classList.remove('active');
+        document.getElementById('page' + page).classList.add('active');
+        window.scrollTo(0, 0);
+    }
+
+    function toggleEmailInput() {
+        const chk = document.getElementById('notify_email');
+        const area = document.getElementById('emailInputArea');
+        if(chk.checked) area.classList.remove('hidden'); else area.classList.add('hidden');
+    }
+    function toggleOtherInput() {
+        const chk = document.getElementById('notify_other');
+        const area = document.getElementById('otherInputArea');
+        if(chk.checked) area.classList.remove('hidden'); else area.classList.add('hidden');
+    }
+    function toggleSpecialInput() {
+        const chk = document.querySelector('input[name="specialOpt"][value="2"]');
+        const area = document.getElementById('specialInputArea');
+        if(chk.checked) area.classList.remove('hidden'); else area.classList.add('hidden');
+    }
+
+    function numToChi(n) {
+        const map = ['零', '壹', '貳', '參', '肆', '伍', '陸', '柒', '捌', '玖'];
+        n = parseInt(n);
+        if (isNaN(n) || n === 0) return "零";
+        let str = "";
+        if (n >= 100) {
+            let hundred = Math.floor(n / 100); str += map[hundred] + "佰"; n %= 100;
+            if (n > 0 && n < 10) str += "零";
+        }
+        if (n >= 10) {
+            let ten = Math.floor(n / 10); str += map[ten] + "拾"; n %= 10;
+        }
+        if (n > 0) str += map[n];
+        return str;
+    }
+
+    function calcDuration() {
+        const sY = parseInt(document.getElementById('startYear').value);
+        const sM = parseInt(document.getElementById('startMonth').value);
+        const sD = parseInt(document.getElementById('startDay').value);
+        const eY = parseInt(document.getElementById('endYear').value);
+        const eM = parseInt(document.getElementById('endMonth').value);
+        const eD = parseInt(document.getElementById('endDay').value);
+        if (!sY || !sM || !sD || !eY || !eM || !eD) return;
+        const start = new Date(sY + 1911, sM - 1, sD);
+        const end = new Date(eY + 1911, eM - 1, eD);
+        let dEnd = new Date(end); dEnd.setDate(dEnd.getDate() + 1);
+        let years = dEnd.getFullYear() - start.getFullYear();
+        let months = dEnd.getMonth() - start.getMonth();
+        let days = dEnd.getDate() - start.getDate();
+        if (days < 0) { months--; let prevMonth = new Date(dEnd.getFullYear(), dEnd.getMonth(), 0); days += prevMonth.getDate(); }
+        if (months < 0) { years--; months += 12; }
+        document.getElementById('durationResult').value = "共計" + numToChi(years) + "年" + numToChi(months) + "月" + numToChi(days) + "日";
+    }
+
+    function calcFees() {
+        let q1 = parseInt(document.getElementById('qty_eip_net_1').value) || 0;
+        let p1 = parseInt(document.getElementById('price_eip_net_1').value) || 0;
+        let sub1 = q1 * p1;
+        document.getElementById('sub_eip_net_1').value = "NT$" + sub1;
+
+        let q2 = parseInt(document.getElementById('qty_eip_net_2').value) || 0;
+        let p2 = parseInt(document.getElementById('price_eip_net_2').value) || 0;
+        let sub2 = q2 * p2;
+        document.getElementById('sub_eip_net_2').value = "NT$" + sub2;
+
+        let q3 = parseInt(document.getElementById('qty_eip_anno').value) || 0;
+        let p3 = parseInt(document.getElementById('price_eip_anno').value) || 0;
+        let sub3 = 0;
+        if (q3 === 0) { document.getElementById('sub_eip_anno').value = "N/A"; sub3 = 0; } 
+        else { sub3 = q3 * p3; document.getElementById('sub_eip_anno').value = "NT$" + sub3; }
+
+        let total = sub1 + sub2 + sub3;
+        document.getElementById('total_monthly').value = "NT$" + total;
+    }
+
+    function generateContract() {
+        if (typeof PizZip === 'undefined') { alert("❌ 系統錯誤：PizZip 函式庫未能成功載入。"); return; }
+        
+        // 檢查圖片模組
+        if (typeof window.ImageModule === 'undefined') {
+            alert("⚠️ 錯誤：圖片模組載入失敗。請嘗試重新整理頁面，或檢查您的網路是否能存取 unpkg.com。");
+            return;
+        }
+
+        const templateURL = "./template.docx";
+        
+        loadFile(templateURL, function(error, content) {
+            if (error) {
+                alert("❌ 錯誤：無法讀取合約範本 (template.docx)。\n請確認檔案已上傳至 GitHub 且檔名正確。");
+                console.error(error);
+                return;
+            }
+
+            try {
+                const CHECKED = "☑";
+                const UNCHECKED = "☒";
+                const isRenew = document.querySelector('input[name="contractType"]:checked').value === 'renew';
+                
+                const q1 = parseInt(document.getElementById('qty_eip_net_1').value) || 0;
+                const q2 = parseInt(document.getElementById('qty_eip_net_2').value) || 0;
+                const q3 = parseInt(document.getElementById('qty_eip_anno').value) || 0;
+                const p1 = parseInt(document.getElementById('price_eip_net_1').value) || 0;
+                const p2 = parseInt(document.getElementById('price_eip_net_2').value) || 0;
+                const p3 = parseInt(document.getElementById('price_eip_anno').value) || 0;
+                
+                const totalNet = q1 + q2; 
+                const totalNetFee = (q1 * p1) + (q2 * p2);
+                const sub3 = q3 === 0 ? 0 : (q3 * p3);
+                const totalMonthlyFee = totalNetFee + sub3;
+                let priceNetStr = "NT$" + p1;
+                if(q2 > 0 && p1 !== p2) { priceNetStr = "NT$" + p1 + " / NT$" + p2; }
+                const qtyAnnoChi = q3 === 0 ? "N/A" : numToChi(q3);
+
+                // ★ 圖片模組設定
+                let opts = {};
+                opts.centered = false;
+                opts.getImage = function(tagValue, tagName) {
+                    if(tagValue) return new Uint8Array(tagValue);
+                    return null;
+                };
+                opts.getSize = function(img, tagValue, tagName) {
+                    return [600, 350]; 
+                };
+                
+                // ★ 初始化圖片模組
+                let imageModule = new window.ImageModule(opts);
+
+                const data = {
+                    check_new: isRenew ? UNCHECKED : CHECKED,
+                    check_renew: isRenew ? CHECKED : UNCHECKED,
+                    start_year: document.getElementById('startYear').value || " ",
+                    start_month: document.getElementById('startMonth').value || " ",
+                    start_day: document.getElementById('startDay').value || " ",
+                    end_year: document.getElementById('endYear').value || " ",
+                    end_month: document.getElementById('endMonth').value || " ",
+                    end_day: document.getElementById('endDay').value || " ",
+                    duration_str: document.getElementById('durationResult').value,
+                    cover_year: document.getElementById('coverYear').value || " ",
+                    cover_month: document.getElementById('coverMonth').value || " ",
+                    cover_day: document.getElementById('coverDay').value || " ",
+                    comm_name: document.getElementById('commName').value,
+                    comm_addr: document.getElementById('commAddr').value,
+                    party_b: document.getElementById('partyB').value,
+                    rep_name: document.getElementById('repName').value,
+                    phone: document.getElementById('phone').value,
+                    tax_id: document.getElementById('taxId').value,
+                    bank_info: document.getElementById('bankName').value + "-" + document.getElementById('bankBranch').value,
+                    acct_name: document.getElementById('acctName').value,
+                    acct_num: document.getElementById('acctNum').value,
+                    qty_total_net: totalNet, 
+                    qty_total_net_chi: (totalNet === 0 ? "零" : numToChi(totalNet)),
+                    qty_net_1_chi: q1 === 0 ? "N/A" : numToChi(q1),
+                    loc_net_1: document.getElementById('loc_eip_net_1').value,
+                    qty_net_2_chi: q2 === 0 ? "N/A" : numToChi(q2),
+                    loc_net_2: document.getElementById('loc_eip_net_2').value,
+                    qty_anno_chi: qtyAnnoChi,
+                    loc_anno: document.getElementById('loc_eip_anno').value,
+                    qty_fee_net_chi: totalNet === 0 ? "N/A" : numToChi(totalNet),
+                    price_fee_net: priceNetStr,
+                    sub_fee_net: "NT$" + totalNetFee,
+                    qty_fee_anno_chi: qtyAnnoChi,
+                    price_fee_anno: q3 === 0 ? "N/A" : "NT$" + p3,
+                    sub_fee_anno: q3 === 0 ? "N/A" : "NT$" + sub3,
+                    total_monthly: "NT$" + totalMonthlyFee,
+                    check_expiry_1: document.querySelector('input[name="expiryOpt"][value="1"]').checked ? CHECKED : UNCHECKED,
+                    check_expiry_2: document.querySelector('input[name="expiryOpt"][value="2"]').checked ? CHECKED : UNCHECKED,
+                    renewal_year_chi: document.getElementById('renewalYear').value, 
+                    check_notify_line: document.getElementById('notify_line').checked ? CHECKED : UNCHECKED,
+                    check_notify_paper: document.getElementById('notify_paper').checked ? CHECKED : UNCHECKED,
+                    check_notify_screen: document.getElementById('notify_screen').checked ? CHECKED : UNCHECKED,
+                    check_notify_email: document.getElementById('notify_email').checked ? CHECKED : UNCHECKED,
+                    check_notify_other: document.getElementById('notify_other').checked ? CHECKED : UNCHECKED,
+                    mail_name_a: document.getElementById('notify_email').checked ? document.getElementById('mail_name_a').value : "",
+                    mail_addr_a: document.getElementById('notify_email').checked ? document.getElementById('mail_addr_a').value : "",
+                    mail_name_b: document.getElementById('notify_email').checked ? document.getElementById('mail_name_b').value : "",
+                    mail_addr_b: document.getElementById('notify_email').checked ? document.getElementById('mail_addr_b').value : "",
+                    other_social_app: document.getElementById('other_social_text').value,
+                    check_special_1: document.querySelector('input[name="specialOpt"][value="1"]').checked ? CHECKED : UNCHECKED,
+                    check_special_2: document.querySelector('input[name="specialOpt"][value="2"]').checked ? CHECKED : UNCHECKED,
+                    special_terms_text: document.getElementById('special_terms_text').value,
+                    
+                    // ★ 傳送圖片資料
+                    passbook_image: passbookImageBuffer 
+                };
+
+                const zip = new PizZip(content);
+                
+                // ★ 掛載模組
+                const doc = new window.docxtemplater(zip, {
+                    paragraphLoop: true,
+                    linebreaks: true,
+                    modules: [imageModule]
+                });
+
+                doc.render(data);
+
+                const out = doc.getZip().generate({
+                    type: "blob",
+                    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                });
+
+                saveAs(out, "合約_" + data.comm_name + ".docx");
+            } catch (error) {
+                console.error(error);
+                alert("生成失敗：" + error.message);
+            }
+        });
+    }
+</script>
+
+</body>
+</html>
